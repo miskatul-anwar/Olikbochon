@@ -1,4 +1,6 @@
-![](./assets/logo.png)
+<p align="center">
+  <img src="./assets/logo.png" alt="Olikbochon logo" width="360">
+</p>
 
 # অলীকবচন (Olikbochon)
 Real-time fingerspelled sign language recognition that turns hand gestures into spoken words — in both English and Bengali.
@@ -142,6 +144,12 @@ uv sync
 ### 3. Install dependencies
 
 ```bash
+git clone https://github.com/miskatul-anwar/Olikbochon.git
+cd Olikbochon
+
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
 pip install -r requirements.txt
 ```
 
