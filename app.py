@@ -12,10 +12,10 @@ Run with:
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 
-from video_processor import SignLanguageProcessor
-from nlp_pipeline import run_pipeline
-from tts_utils import synthesize_speech, autoplay_audio_html
-from style import CUSTOM_CSS
+from core.video_processor import SignLanguageProcessor
+from core.nlp_pipeline import run_pipeline
+from core.tts_utils import synthesize_speech, autoplay_audio_html
+from core.style import CUSTOM_CSS
 
 # ----------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
@@ -133,7 +133,7 @@ if generate_clicked:
 # Output: final caption + audio
 # ----------------------------------------------------------------------------
 if st.session_state.english_text:
-    st.markdown('<div class="caption-box">', unsafe_allow_html=True)
+    # st.markdown('<div class="caption-box">', unsafe_allow_html=True)
     st.markdown('<div class="caption-label">Detected caption</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="caption-text-en">{st.session_state.english_text}</div>',
                 unsafe_allow_html=True)
