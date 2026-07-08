@@ -1,5 +1,5 @@
 # অলীকবচন (Olikbochon) — Bridging Communication
-
+![](./assets/logo.png)
 Real-time sign language into text and speech, in English and Bengali.
 
 A monolithic **Streamlit** web app that translates real-time fingerspelled
