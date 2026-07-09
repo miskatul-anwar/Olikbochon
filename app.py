@@ -166,10 +166,9 @@ with cam_col_center:
         video_processor_factory=SignLanguageProcessor,
         media_stream_constraints={
             "video": {
-                # "width": {"ideal": 1280},
-                # "height": {"ideal": 720},
-                # "aspectRatio": {"ideal": 1.7777777778},
-                "aspectRatio": "16/9",
+                "width": {"ideal": 1280},
+                "height": {"ideal": 720},
+                "aspectRatio": {"ideal": 1.7777777778},
             },
             "audio": False,
         },
@@ -184,9 +183,8 @@ with cam_col_center:
                 "display": "block",
                 "object-fit": "contain",
             },
-        )
+        ),
     )
-
 # ----------------------------------------------------------------------------
 # Controls — inline in the main UI (no sidebar)
 # ----------------------------------------------------------------------------
