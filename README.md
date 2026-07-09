@@ -12,6 +12,10 @@
   <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-RandomForest-F7931E?logo=scikitlearn&logoColor=white">
 </p>
 
+<p align="center">
+  <a href="https://olikbochon.streamlit.app/"><b>Live demo — olikbochon.streamlit.app</b></a>
+</p>
+
 ---
 
 ## Overview
@@ -23,7 +27,7 @@ The project is organized as two complementary parts:
 1. **Application runtime** (`app.py`, `core/`) — real-time inference, an editable letter buffer, captioning, translation, and speech synthesis.
 2. **Data and model pipeline** (`process/`) — standalone scripts for dataset collection, dataset construction, and classifier training, allowing the bundled model to be reproduced or retrained from scratch.
 
-The project is built entirely on free and open-source components: no paid APIs, no cloud ML services, and no API keys are required to run it.
+The project is built entirely on free and open-source components: no paid APIs, no cloud ML services, and no API keys are required to run it. A hosted build is live at **[olikbochon.streamlit.app](https://olikbochon.streamlit.app/)**.
 
 ---
 
@@ -46,7 +50,7 @@ Detection loop (recv() callback, per frame)
 Pause detection → word boundary inserted
   │
   ▼
-Editable letter buffer (⟳ Load, manual add/edit/remove)
+Editable letter buffer (⟳ Reload, manual add/edit/remove)
   │
   ▼
 NLP pipeline
@@ -114,6 +118,7 @@ Olikbochon/
 │       └── 0 ... 25/            # 26 class-wise folders of training images
 ├── Dockerfile
 ├── .dockerignore
+├── packages.txt
 ├── pyproject.toml
 ├── requirements.txt
 ├── uv.lock
@@ -122,7 +127,7 @@ Olikbochon/
 
 | Module | Responsibility |
 |---|---|
-| `app.py` | Streamlit entry point — page setup, camera-first WebRTC layout, inline controls, editable letter buffer, output rendering |
+| `app.py` | Streamlit entry point — page setup, camera-first WebRTC layout, dynamic TURN/STUN selection, inline controls, editable letter buffer, output rendering |
 | `core/sign_detector.py` | Hand-landmark extraction and model-inference bridge; also returns a confidence score |
 | `core/video_processor.py` | Per-frame WebRTC callback — debounce logic, live caption overlay, thread-safe buffer and detection-log handling |
 | `core/nlp_pipeline.py` | Text cleanup, optional spell correction, optional Bengali translation |
@@ -141,7 +146,7 @@ Olikbochon/
 
 **2. Buffering.** `core/video_processor.py` only commits a letter once it repeats for `STABLE_FRAMES = 15` consecutive frames (~0.5 s), preventing duplicate spam. After `RESET_FRAMES = 20` frames (~0.7 s) with no hand detected, a space is inserted as a word boundary. Each commit is logged with a timestamp and confidence score, guarded by a thread-safe lock since `recv()` runs on its own WebRTC thread.
 
-**3. Editing.** The committed buffer can be loaded (via **⟳ Load**) into an editable text field — the actual source of truth for generation — so letters can be corrected, added, or removed by hand, or typed directly without the camera.
+**3. Editing.** The committed buffer can be loaded (via **⟳ Reload**) into an editable text field — the actual source of truth for generation — so letters can be corrected, added, or removed by hand, or typed directly without the camera.
 
 **4. NLP.** `core/nlp_pipeline.py` lower-cases and normalizes whitespace, optionally spell-corrects word-by-word with `pyspellchecker` (skipped if **Auto-correct spelling** is off), capitalizes the result, and optionally translates it to Bengali via `deep-translator`. A failed translation falls back to a visible "Translation unavailable" message instead of crashing the app.
 
@@ -220,13 +225,26 @@ The image exposes port `8501` and includes a `HEALTHCHECK` against Streamlit's `
 
 ---
 
+## Deployment
+
+The hosted build at **[olikbochon.streamlit.app](https://olikbochon.streamlit.app/)** runs on Streamlit Community Cloud. Two deployment-specific pieces support that:
+
+- **`packages.txt`** — the apt packages Community Cloud installs before launching the app (`libgl1`, `libgles2`, `libegl1`, `ffmpeg`, and related OpenCV/MediaPipe runtime libraries), mirroring the system dependencies in the `Dockerfile`.
+- **Dynamic ICE servers** (`get_ice_servers()` in `app.py`) — a STUN-only configuration isn't enough on Community Cloud, since it (like many restrictive networks) blocks direct peer-to-peer WebRTC traffic. `app.py` now requests a TURN relay: it uses Twilio's Network Traversal Service if `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` are set as Streamlit secrets or environment variables, and otherwise falls back to the free Open Relay Project TURN server plus a Google STUN server.
+
+This logic runs the same way locally and in Docker, so self-hosted deployments benefit from it automatically; setting Twilio credentials is optional but recommended for more reliable connectivity than the shared free relay.
+
+---
+
 ## Usage guide
+
+Try it instantly at **[olikbochon.streamlit.app](https://olikbochon.streamlit.app/)**, or run it locally:
 
 1. **Start the camera.** Click **Start** below the video panel.
 2. **Fingerspell letters.** Hold each hand shape steady for about half a second; the live caption bar shows what's been captured so far.
 3. **Pause between words.** Briefly drop your hand out of frame to insert a word boundary.
 4. **Set your options.** Toggle **Translate to Bengali**, toggle **Auto-correct spelling**, and choose a speech language.
-5. **Load and edit the buffer.** Click **⟳ Load** to pull camera-detected letters into the editable **Edit Buffer** field — type, backspace, or paste to add or fix letters; this field is what actually gets processed.
+5. **Load and edit the buffer.** Click **⟳ Reload** to pull camera-detected letters into the editable buffer field — type, backspace, or paste to add or fix letters; this field is what actually gets processed.
 6. **Generate.** Click **Generate** to normalize, optionally spell-correct, optionally translate, and synthesize speech.
 7. **Review.** The caption (and Bengali translation, if enabled) appears in the **Detected Caption** card, with the custom audio player below. Expand **"Show raw detected letters"** for a per-letter table with timestamp and confidence.
 8. **Start over.** Click **Clear Buffer** to reset everything.
@@ -240,7 +258,8 @@ The image exposes port `8501` and includes a `HEALTHCHECK` against Streamlit's `
 | `STABLE_FRAMES` | `core/video_processor.py` | `15` | Frames a letter must hold steady before commit |
 | `RESET_FRAMES` | `core/video_processor.py` | `20` | Frames with no hand before inserting a word boundary |
 | `MODEL_URL` | `core/sign_detector.py` | Google's hosted `hand_landmarker` (float16) | Fallback download for `hand_landmarker.task` |
-| `RTC_CONFIGURATION` | `app.py` | Public Google STUN server | WebRTC connectivity; add a TURN server for restrictive networks |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` | Streamlit secrets or env vars | Unset | Optional — routes WebRTC through Twilio's TURN service instead of the free public relay |
+| `RTC_CONFIGURATION` | `app.py` (`get_ice_servers()`) | Google STUN + Open Relay Project TURN (free fallback) | WebRTC connectivity for restrictive networks, including Streamlit Community Cloud |
 
 No API keys are required — translation and speech synthesis both use free, unauthenticated endpoints.
 
@@ -258,14 +277,15 @@ No API keys are required — translation and speech synthesis both use free, una
 | Speech | [`gTTS`](https://github.com/pndurang/gTTS) | Free MP3 speech synthesis |
 | Training only | [`matplotlib`](https://matplotlib.org/) | Imported by `process/create_dataset.py`; not pinned as a dependency |
 | Deployment | [`Docker`](https://www.docker.com/) | Containerized runtime via the included `Dockerfile`, dependencies synced with `uv` |
+| Hosting | [Streamlit Community Cloud](https://streamlit.io/cloud) | Live deployment at [olikbochon.streamlit.app](https://olikbochon.streamlit.app/), configured via `packages.txt` |
 
 ---
 
 ## Troubleshooting
 
 - **Camera doesn't start / black video panel.** Confirm browser camera permission; `streamlit-webrtc` requires HTTPS or `localhost`.
-- **Connection fails when deployed remotely.** The app only configures a public STUN server by default; add a TURN server to `RTC_CONFIGURATION` in `app.py`.
-- **"No letters to work with yet."** Click **⟳ Load** first, or type letters directly into the Edit Buffer.
+- **Connection stuck on "Connection is taking longer than expected."** This happens when both the built-in TURN fallback and Twilio (if configured) are unreachable — check your network's outbound UDP/TCP rules, or set `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` for a more reliable relay.
+- **"No letters to work with yet."** Click **⟳ Reload** first, or type letters directly into the editable buffer.
 - **No audio plays.** Browsers often block autoplay with sound; use the custom player's play button.
 
 ---
