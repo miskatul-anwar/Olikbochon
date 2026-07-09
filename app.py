@@ -166,9 +166,10 @@ with cam_col_center:
         video_processor_factory=SignLanguageProcessor,
         media_stream_constraints={
             "video": {
-                "width": {"ideal": 1280},
-                "height": {"ideal": 720},
-                "aspectRatio": {"ideal": 1.7777777778},
+                # "width": {"ideal": 1280},
+                # "height": {"ideal": 720},
+                # "aspectRatio": {"ideal": 1.7777777778},
+                "aspectRatio": "16/9",
             },
             "audio": False,
         },
@@ -183,13 +184,12 @@ with cam_col_center:
                 "display": "block",
                 "object-fit": "contain",
             },
-        ),
+        )
     )
 
 # ----------------------------------------------------------------------------
 # Controls — inline in the main UI (no sidebar)
 # ----------------------------------------------------------------------------
-st.markdown("### Controls")
 
 ctrl_col1, ctrl_col2, ctrl_col_spacer, ctrl_col3 = st.columns([1, 1, 0.6, 1.2])
 
@@ -228,12 +228,7 @@ if st.session_state._sync_edit_buffer:
         st.session_state.edit_buffer = "".join(ctx.video_processor.get_buffer_copy())
     st.session_state._sync_edit_buffer = False
 
-st.markdown("### Edit Buffer")
-st.caption(
-    "This is exactly what becomes your caption. Click anywhere in the box "
-    "to add or remove letters — e.g. detected \u201cA CAB\u201d? Edit it to "
-    "\u201cA CAT\u201d or \u201cA BAT\u201d before generating."
-)
+# st.markdown("### Edit Buffer")
 
 edit_col1, edit_col2 = st.columns([4, 1])
 
