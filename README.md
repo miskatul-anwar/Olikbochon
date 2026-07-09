@@ -19,69 +19,69 @@
 
 **Olikbochon** (অলীকবচন) is a **Streamlit**-based real-time sign-language fingerspelling system that converts webcam hand gestures into readable, spell-corrected captions and, optionally, spoken audio in **English** or **Bengali**.
 
-The project is organized as a full end-to-end pipeline, made up of two complementary parts:
+The project is organized as two complementary parts:
 
-1. **Application runtime** (`app.py`, `core/`) — real-time inference, captioning, translation, and speech synthesis.
-2. **Data and model pipeline** (`process/`) — scripts for dataset collection, dataset construction, and classifier training, allowing the bundled model to be reproduced or retrained from scratch.
+1. **Application runtime** (`app.py`, `core/`) — real-time inference, an editable letter buffer, captioning, translation, and speech synthesis.
+2. **Data and model pipeline** (`process/`) — standalone scripts for dataset collection, dataset construction, and classifier training, allowing the bundled model to be reproduced or retrained from scratch.
 
 The project is built entirely on free and open-source components: no paid APIs, no cloud ML services, and no API keys are required to run it.
 
-At a glance, the runtime pipeline is:
+---
+
+## Architecture
 
 ```text
-Webcam frames
-   -> MediaPipe Hand Landmarker (landmark extraction)
-   -> RandomForest letter classifier
-   -> Debounced letter buffering
-   -> Text normalization + spell correction
-   -> Optional Bengali translation
-   -> gTTS speech synthesis
-   -> Caption + audio output in Streamlit
-```
-
-And the offline model pipeline is:
-
-```text
-Data Collection -> Dataset Build -> Model Training -> Real-time Inference UI
+Webcam
+  │
+  ▼
+streamlit-webrtc (video stream in-browser, over WebRTC)
+  │
+  ▼
+Detection loop (recv() callback, per frame)
+  │
+  ├─ MediaPipe HandLandmarker → 21 hand keypoints per hand
+  ├─ RandomForestClassifier (core/model/model.p) → predicted letter + confidence
+  └─ Debounce + buffer logic → stable letter committed, logged with timestamp
+  │
+  ▼
+Pause detection → word boundary inserted
+  │
+  ▼
+Editable letter buffer (⟳ Load, manual add/edit/remove)
+  │
+  ▼
+NLP pipeline
+  ├─ pyspellchecker → corrected word/sentence (optional)
+  └─ deep-translator → Bengali translation (optional)
+  │
+  ▼
+gTTS → audio → custom player (play/pause, mute, seek) in-browser
 ```
 
 ---
 
-## Table of contents
+## Preview
 
-- [Features](#features)
-- [Project structure](#project-structure)
-- [How it works](#how-it-works)
-  - [1. Hand detection and letter classification](#1-hand-detection-and-letter-classification)
-  - [2. Debounced letter buffering](#2-debounced-letter-buffering)
-  - [3. NLP post-processing](#3-nlp-post-processing)
-  - [4. Text-to-speech](#4-text-to-speech)
-- [Data and training pipeline](#data-and-training-pipeline)
-- [Model details](#model-details)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Running the app](#running-the-app)
-- [Usage guide](#usage-guide)
-- [Configuration](#configuration)
-- [Technologies used](#technologies-used)
-- [Troubleshooting](#troubleshooting)
-- [Known limitations and future improvements](#known-limitations-and-future-improvements)
-- [License](#license)
+<p align="center">
+  <img src="./images/260709_01h07m30s_screenshot.png" alt="Olikbochon application screenshot" width="700">
+</p>
 
 ---
 
 ## Features
 
 - **Live camera feed** in the browser via `streamlit-webrtc` — a full-width, camera-first UI with a live caption bar drawn directly on the video frame.
-- **Hand-landmark based fingerspelling recognition** — MediaPipe Tasks `HandLandmarker` (up to 2 hands) feeds an 84-feature vector into a trained `RandomForestClassifier` that predicts one of 26 English letters (A–Z) per frame.
-- **Stability-gated letter commit** — a predicted letter is only added to the output buffer once it has been held steady for a configurable number of consecutive frames, so a single sign is not registered dozens of times per second.
-- **Automatic word-boundary detection** — when no hand is detected for a short window, a space is inserted into the buffer, allowing multiple words to be fingerspelled in one continuous session.
-- **NLP post-processing** — the raw letter stream is lower-cased, whitespace-normalized, and spell-corrected word-by-word with `pyspellchecker`, then re-capitalized into a clean caption.
-- **Bengali translation** — optional, one-click translation of the corrected English caption into Bengali using `deep-translator`'s free `GoogleTranslator` wrapper (no API key required).
-- **Text-to-speech** — the final caption (English or Bengali) is synthesized to MP3 with `gTTS` and autoplayed in-browser via a base64-embedded `<audio>` tag.
-- **Buffer controls** — "Generate Speech & Caption" runs the NLP/TTS pipeline on everything signed so far; "Clear Buffer" resets the session.
-- **Minimal, modern dark UI** — custom CSS (`core/style.py`) hides the default Streamlit chrome and applies a dark, gradient, rounded-corner theme with a dedicated caption box.
-- **Reproducible model pipeline** — a dedicated `process/` directory covers dataset collection, dataset construction, and classifier training, so the shipped model can be regenerated or extended.
+- **Hand-landmark based fingerspelling recognition** — MediaPipe Tasks `HandLandmarker` (up to 2 hands) feeds a padded/trimmed landmark vector into a trained `RandomForestClassifier` that predicts one of 26 English letters (A–Z) per frame.
+- **Stability-gated letter commit** — a letter is only added to the buffer once it has been held steady for a configurable number of frames, so a single sign isn't registered dozens of times per second.
+- **Automatic word-boundary detection** — a pause with no hand in frame inserts a space, allowing full sentences in one continuous session.
+- **Per-letter confidence logging** — every committed letter is logged with a timestamp and confidence score, viewable as a table in the UI.
+- **Editable letter buffer** — camera detections load into an editable text field, where letters can be added, corrected, or removed by hand — or typed from scratch, camera-free.
+- **Inline controls** — toggle Bengali translation, toggle auto-correct spelling, and choose the speech language, all directly under the video feed.
+- **NLP post-processing** — whitespace normalization and, when enabled, word-by-word spell correction (`pyspellchecker`), then re-capitalized into a clean caption.
+- **Bengali translation** — optional, one-click translation via `deep-translator`'s free `GoogleTranslator` wrapper (no API key required).
+- **Text-to-speech with a custom player** — `gTTS`-synthesized audio played through a dark-themed player with play/pause, mute, and seek controls.
+- **Minimal, modern dark UI** — custom CSS hides the default Streamlit chrome in favor of a dark, gradient, rounded-corner theme.
+- **Reproducible model pipeline** — a dedicated `process/` directory covers dataset collection, dataset construction, and classifier training.
 - **100% free/open-source stack** — no paid or metered third-party APIs anywhere in the pipeline.
 
 ---
@@ -93,6 +93,8 @@ Olikbochon/
 ├── app.py
 ├── assets/
 │   └── logo.png
+├── images/
+│   └── 260709_01h07m30s_screenshot.png
 ├── core/
 │   ├── __init__.py
 │   ├── data/
@@ -112,129 +114,70 @@ Olikbochon/
 │   ├── test_setup.py
 │   ├── train_classifier.py
 │   └── data/
-│       ├── .DS_Store
-│       └── 0 ... 25/            # class-wise folders of training images
-├── .gitignore
-├── .python-version
+│       └── 0 ... 25/            # 26 class-wise folders of training images
 ├── pyproject.toml
 ├── requirements.txt
 ├── uv.lock
 └── README.md
 ```
 
-### Module responsibilities
-
-**Runtime application** (`app.py` + `core/`)
-
 | Module | Responsibility |
 |---|---|
-| `app.py` | Streamlit entry point — page setup, UI flow, controls, WebRTC integration, output rendering |
-| `core/sign_detector.py` | Hand-landmark extraction and model-inference bridge |
-| `core/video_processor.py` | Frame-level processing callback, stabilization/debounce logic, live caption overlay, buffer handling |
-| `core/nlp_pipeline.py` | Post-processing of detected letters — text cleanup, spell correction, optional Bengali translation |
-| `core/tts_utils.py` | gTTS audio generation and browser-playable autoplay `<audio>` helper |
-| `core/style.py` | Custom Streamlit CSS / theme customizations |
-| `core/model/` | Trained classifier (`model.p`) and MediaPipe hand-landmark model asset (`hand_landmarker.task`) |
-| `core/data/data.pickle` | Serialized feature/label dataset produced by the data pipeline, consumed during training |
+| `app.py` | Streamlit entry point — page setup, camera-first WebRTC layout, inline controls, editable letter buffer, output rendering |
+| `core/sign_detector.py` | Hand-landmark extraction and model-inference bridge; also returns a confidence score |
+| `core/video_processor.py` | Per-frame WebRTC callback — debounce logic, live caption overlay, thread-safe buffer and detection-log handling |
+| `core/nlp_pipeline.py` | Text cleanup, optional spell correction, optional Bengali translation |
+| `core/tts_utils.py` | gTTS audio generation, plus a hidden autoplay helper and a styled custom audio player |
+| `core/style.py` | Custom Streamlit CSS / theme |
+| `core/model/` `core/data/` | Trained classifier, MediaPipe model asset, and serialized training features |
+| `process/*.py` | Dataset collection, dataset build, and classifier training — see below |
 
-**Data and model pipeline** (`process/`)
-
-| Script | Responsibility |
-|---|---|
-| `process/collect_imgs.py` | Captures class-wise hand-sign images from the webcam for dataset creation |
-| `process/create_dataset.py` | Builds serialized dataset features (`core/data/data.pickle`) from raw captured images |
-| `process/train_classifier.py` | Trains the `RandomForestClassifier` and saves the trained model artifact to `core/model/model.p` |
-| `process/inference_classifier.py` | Standalone inference/testing script outside the Streamlit app context |
-| `process/test_setup.py` | Environment and setup validation checks for local development |
-| `process/data/` | Raw training images, organized into class-wise folders `0`–`25` |
+> All `process/` scripts use paths relative to `process/` itself (for example `./data`, `./model.p`). Run them with `process/` as the working directory.
 
 ---
 
 ## How it works
 
-### 1. Hand detection and letter classification
+**1. Detection.** `core/sign_detector.py` loads the trained `RandomForestClassifier` (`core/model/model.p`) and MediaPipe's Tasks `HandLandmarker` (`core/model/hand_landmarker.task`, auto-downloaded on first run). For each frame it detects up to 2 hands, draws the 21-point skeleton, flattens landmark `(x, y)` coordinates into a feature vector padded/trimmed to `model.n_features_in_`, and predicts a letter via `LABELS_DICT`. When available, `predict_proba` also yields a confidence score.
 
-`core/sign_detector.py` wraps the core inference logic in a `SignDetector` class:
+**2. Buffering.** `core/video_processor.py` only commits a letter once it repeats for `STABLE_FRAMES = 15` consecutive frames (~0.5 s), preventing duplicate spam. After `RESET_FRAMES = 20` frames (~0.7 s) with no hand detected, a space is inserted as a word boundary. Each commit is logged with a timestamp and confidence score, guarded by a thread-safe lock since `recv()` runs on its own WebRTC thread.
 
-1. Loads the trained model from `core/model/model.p` (a `dict` with a single `"model"` key holding a `sklearn.ensemble.RandomForestClassifier`).
-2. Loads MediaPipe's Tasks-API `HandLandmarker` from `core/model/hand_landmarker.task`, downloading it automatically from Google's model storage if the file is not present locally.
-3. For every incoming BGR frame (`predict_frame`):
-   - Converts the frame to RGB and runs `HandLandmarker.detect()` (supports up to **2 hands**, `min_hand_detection_confidence=0.3`, single-image running mode).
-   - Draws the 21-point hand skeleton and landmark dots directly on the frame for visual feedback.
-   - Flattens each detected hand's landmark `(x, y)` coordinates into a feature vector, pads/truncates it to match the model's expected input size, and calls `model.predict(...)`.
-   - Maps the numeric prediction to a letter via `LABELS_DICT` (`0` → `A`, … `25` → `Z`) and draws a bounding box and letter label over the hand.
-   - Returns the annotated frame and the predicted letter (or `None` if no hand is visible).
+**3. Editing.** The committed buffer can be loaded (via **⟳ Load**) into an editable text field — the actual source of truth for generation — so letters can be corrected, added, or removed by hand, or typed directly without the camera.
 
-### 2. Debounced letter buffering
+**4. NLP.** `core/nlp_pipeline.py` lower-cases and normalizes whitespace, optionally spell-corrects word-by-word with `pyspellchecker` (skipped if **Auto-correct spelling** is off), capitalizes the result, and optionally translates it to Bengali via `deep-translator`. A failed translation falls back to a visible "Translation unavailable" message instead of crashing the app.
 
-`core/video_processor.py` defines `SignLanguageProcessor(VideoProcessorBase)`, the class handed to `streamlit-webrtc` as the per-frame callback:
-
-- **`STABLE_FRAMES = 15`** (~0.5 s at 30 fps): a predicted letter must repeat for this many consecutive frames before it is committed to the letter buffer — this prevents the same sign from being appended dozens of times per second.
-- **`RESET_FRAMES = 20`** (~0.7 s at 30 fps): if no hand is detected for this many consecutive frames, a single space is appended to the buffer (marking a word boundary), and the "last committed" guard is cleared so the same letter can be signed again immediately afterward (for example, double letters like "LL").
-- A thread-safe lock protects the shared buffer, since `recv()` runs on a separate WebRTC thread from the main Streamlit thread.
-- A live caption bar (the last ~40 buffered characters) is drawn as a semi-transparent bar across the bottom of the video, mimicking a live-caption style overlay.
-
-### 3. NLP post-processing
-
-`core/nlp_pipeline.py` converts the raw letter buffer into a clean caption when **Generate Speech & Caption** is clicked:
-
-1. `letters_to_raw_text` — joins the buffered characters, collapses repeated whitespace, and lower-cases the result.
-2. `spell_correct` — splits on whitespace and corrects each word individually with `pyspellchecker`. Single-character tokens are passed through unchanged (uppercased only for the words "a" or "i"), and the final sentence is capitalized.
-3. `translate_to_bengali` *(optional)* — translates the corrected English caption to Bengali using `deep-translator`'s `GoogleTranslator`. If translation fails (for example, no internet access), the caption falls back to a visible "Translation unavailable" message rather than crashing the app.
-
-### 4. Text-to-speech
-
-`core/tts_utils.py` synthesizes the final caption (English or Bengali, depending on the sidebar toggle) into MP3 bytes using `gTTS`, and builds a hidden, autoplaying `<audio>` HTML tag (base64 data URI) so the caption is spoken as soon as it is generated. Streamlit's built-in `st.audio` player does not autoplay on its own, so both a visible player and the hidden autoplay tag are rendered together.
+**5. Speech.** `core/tts_utils.py` synthesizes the caption to MP3 with `gTTS` and renders it through `custom_audio_player_html` — a small dark-themed player (play/pause, mute, seek) mounted via `st.components.v1.html`, since Streamlit's `st.markdown` doesn't execute embedded `<script>` tags.
 
 ---
 
 ## Data and training pipeline
 
-The `process/` directory provides an offline workflow for regenerating or extending the bundled classifier, decoupled from the real-time application:
+The `process/` directory offline-regenerates the bundled classifier. Run its scripts from inside `process/`:
 
-1. **Collect class images** — run `process/collect_imgs.py` to capture webcam images for each letter class into `process/data/<class_id>/`.
-2. **Build the dataset** — run `process/create_dataset.py` to extract MediaPipe hand-landmark features from the collected images and serialize them into `core/data/data.pickle`.
-3. **Train the classifier** — run `process/train_classifier.py` to fit a `RandomForestClassifier` on the serialized dataset and export the trained model to `core/model/model.p`.
-4. **Validate inference** — use `process/inference_classifier.py` for a standalone sanity check outside the Streamlit app, or `process/test_setup.py` to verify the local environment is correctly configured.
-5. **Run the app** — the runtime application (`app.py`) automatically picks up the updated model from `core/model/model.p`.
+```bash
+cd process
+python collect_imgs.py       # 26 classes x 100 images -> process/data/<class_id>/
+python create_dataset.py     # landmark extraction (legacy mediapipe.solutions.hands) -> process/data.pickle
+python train_classifier.py   # RandomForestClassifier, 80/20 split -> process/model.p, prints test accuracy
 
-> Keep the label mapping and feature format consistent between the training scripts (`process/`) and the inference code (`core/sign_detector.py`); the classifier expects a fixed-size flattened feature vector across up to two hands.
+# promote the new artifacts into the runtime app's expected paths
+cp model.p ../core/model/model.p
+cp data.pickle ../core/data/data.pickle
+```
 
----
+Use `python inference_classifier.py` for a standalone, OpenCV-window sanity check, or `python test_setup.py` to confirm `opencv-python`, `mediapipe`, and `scikit-learn` import correctly.
 
-## Model details
-
-| Property | Value |
-|---|---|
-| Model type | `sklearn.ensemble.RandomForestClassifier` |
-| Trees (`n_estimators`) | 100 |
-| Input features | 84 (up to 2 hands × 21 landmarks × 2 coordinates `(x, y)`) |
-| Output classes | 26 (mapped to letters `A`–`Z` via `LABELS_DICT`) |
-| Storage format | Pickled `dict` (`{"model": <classifier>}`) in `core/model/model.p` |
-| Hand landmarks | MediaPipe Tasks `HandLandmarker` (`core/model/hand_landmarker.task`, float16 variant) |
-| Training dataset | Class-wise raw images under `process/data/0` … `process/data/25` |
-| Serialized features | `core/data/data.pickle`, produced by `process/create_dataset.py` |
-
-If retraining the model, keep the feature layout consistent (flattened per-landmark `x, y` pairs across up to two hands), since `core/sign_detector.py` pads/truncates incoming feature vectors to `model.n_features_in_`.
-
-> Note: the bundled model may have been trained with an older scikit-learn release than the one installed locally. Loading it with a newer `scikit-learn` can print an `InconsistentVersionWarning`; this is expected and does not currently prevent inference, but consider retraining or re-pickling the model against your pinned `scikit-learn` version for long-term reliability.
-
----
-
-## Prerequisites
-
-- **Python 3.11+** (pinned via `.python-version`; `pyproject.toml` requires `>=3.11`)
-- A **webcam** and a browser that supports WebRTC (Chrome, Edge, Firefox)
-- Internet access for:
-  - The first run, to auto-download `hand_landmarker.task` if it is not already present
-  - Bengali translation (`deep-translator`) and speech synthesis (`gTTS`), both of which call external free services at runtime
-- (Optional) [`uv`](https://github.com/astral-sh/uv) if you prefer the lockfile-based workflow over plain `pip`
+> **Extra dependency:** `create_dataset.py` imports `matplotlib`, which isn't listed in `requirements.txt`/`pyproject.toml` — install it separately.
+>
+> **GUI requirement:** `collect_imgs.py` and `inference_classifier.py` call `cv2.imshow`, which needs a GUI-capable OpenCV build; the project's pinned `opencv-python-headless` doesn't support it, so install regular `opencv-python` to run them.
+>
+> **Feature-extraction mismatch:** `create_dataset.py` uses the legacy `mediapipe.solutions.hands` API, while runtime `core/sign_detector.py` uses the newer Tasks `HandLandmarker` API. Both produce 21 `(x, y)` landmarks per hand, but keep the difference in mind when extending the pipeline.
 
 ---
 
 ## Installation
 
-### Option A — using pip and requirements.txt
+**Requirements:** Python 3.11+ (pinned via `.python-version`), a webcam, and a WebRTC-capable browser (Chrome, Edge, Firefox). Internet access is needed on first run (to download `hand_landmarker.task`) and for Bengali translation/speech synthesis. No API keys are required.
 
 ```bash
 git clone https://github.com/miskatul-anwar/Olikbochon.git
@@ -242,20 +185,16 @@ cd Olikbochon
 
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
 ```
 
-### Option B — using uv and the lockfile
+Or with [`uv`](https://github.com/astral-sh/uv):
 
 ```bash
 git clone https://github.com/miskatul-anwar/Olikbochon.git
 cd Olikbochon
-
 uv sync
 ```
-
-Either approach installs the same set of dependencies (see [Technologies used](#technologies-used) below).
 
 ---
 
@@ -265,40 +204,33 @@ Either approach installs the same set of dependencies (see [Technologies used](#
 streamlit run app.py
 ```
 
-Streamlit prints a local URL (typically `http://localhost:8501`). Open it in a WebRTC-capable browser, grant camera permission when prompted, and click **Start** under the video panel.
+Streamlit prints a local URL (typically `http://localhost:8501`). Open it, grant camera permission when prompted, and click **Start** under the video panel.
 
 ---
 
 ## Usage guide
 
-1. **Start the camera.** Click **Start** below the video panel to begin streaming from your webcam.
-2. **Fingerspell letters.** Hold each hand shape steady for about half a second so it gets committed to the buffer; the live caption bar at the bottom of the video shows what has been captured so far.
-3. **Pause between words.** Briefly drop your hand out of frame for under a second to insert a space/word boundary.
-4. **Generate the caption.** Click **Generate Speech & Caption**. The buffered letters are spell-corrected, optionally translated to Bengali (sidebar toggle), and converted to speech.
-5. **Review the output.** The corrected English caption (and Bengali translation, if enabled) appears in a highlighted caption box, along with an audio player that autoplays the synthesized speech. Expand "Show raw detected letters" to see the uncorrected buffer.
-6. **Start over.** Click **Clear Buffer** to reset the letter buffer, captions, and audio, and begin a new session.
-
-### Sidebar controls
-
-| Control | Effect |
-|---|---|
-| **Translate to Bengali** (toggle) | Enables/disables the Bengali translation step and the "Bengali" speech option |
-| **Speak output in** (radio) | Chooses whether the synthesized speech is English or Bengali (Bengali only available when translation is enabled) |
+1. **Start the camera.** Click **Start** below the video panel.
+2. **Fingerspell letters.** Hold each hand shape steady for about half a second; the live caption bar shows what's been captured so far.
+3. **Pause between words.** Briefly drop your hand out of frame to insert a word boundary.
+4. **Set your options.** Toggle **Translate to Bengali**, toggle **Auto-correct spelling**, and choose a speech language.
+5. **Load and edit the buffer.** Click **⟳ Load** to pull camera-detected letters into the editable **Edit Buffer** field — type, backspace, or paste to add or fix letters; this field is what actually gets processed.
+6. **Generate.** Click **Generate** to normalize, optionally spell-correct, optionally translate, and synthesize speech.
+7. **Review.** The caption (and Bengali translation, if enabled) appears in the **Detected Caption** card, with the custom audio player below. Expand **"Show raw detected letters"** for a per-letter table with timestamp and confidence.
+8. **Start over.** Click **Clear Buffer** to reset everything.
 
 ---
 
 ## Configuration
 
-The app currently has no `.env` file or externally configurable settings — all tunables live directly in source:
-
-| Setting | File | Default | Purpose |
+| Setting | Location | Default | Purpose |
 |---|---|---|---|
-| `STABLE_FRAMES` | `core/video_processor.py` | `15` | Frames a letter must hold steady before being committed |
-| `RESET_FRAMES` | `core/video_processor.py` | `20` | Frames of no detected hand before inserting a word-boundary space |
-| `MODEL_URL` | `core/sign_detector.py` | Google's hosted `hand_landmarker` (float16) | Fallback download source for `hand_landmarker.task` if it is missing locally |
-| ICE servers | `app.py` (`RTC_CONFIGURATION`) | Public Google STUN server | WebRTC connectivity; add a TURN server here for stricter/NAT-heavy networks (for example, some cloud deployments) |
+| `STABLE_FRAMES` | `core/video_processor.py` | `15` | Frames a letter must hold steady before commit |
+| `RESET_FRAMES` | `core/video_processor.py` | `20` | Frames with no hand before inserting a word boundary |
+| `MODEL_URL` | `core/sign_detector.py` | Google's hosted `hand_landmarker` (float16) | Fallback download for `hand_landmarker.task` |
+| `RTC_CONFIGURATION` | `app.py` | Public Google STUN server | WebRTC connectivity; add a TURN server for restrictive networks |
 
-No API keys are required — `deep-translator`'s `GoogleTranslator` wrapper and `gTTS` both use free, unauthenticated endpoints.
+No API keys are required — translation and speech synthesis both use free, unauthenticated endpoints.
 
 ---
 
@@ -306,40 +238,31 @@ No API keys are required — `deep-translator`'s `GoogleTranslator` wrapper and 
 
 | Category | Library | Purpose |
 |---|---|---|
-| Web app / UI | [`streamlit`](https://streamlit.io/) | App framework and UI |
-| Live video | [`streamlit-webrtc`](https://github.com/whitphx/streamlit-webrtc) | Browser webcam streaming into Python |
-| Video frame I/O | [`av`](https://github.com/PyAV-Org/PyAV) | Converting between WebRTC frames and NumPy arrays |
-| Computer vision | [`opencv-python-headless`](https://github.com/opencv/opencv-python) | Frame drawing (landmarks, boxes, caption bar), color conversion |
-| Hand tracking | [`mediapipe`](https://developers.google.com/mediapipe) | `HandLandmarker` Tasks API for 21-point hand skeletons |
-| Numerical computing | [`numpy`](https://numpy.org/) | Feature vector construction |
+| Web app / UI | [`streamlit`](https://streamlit.io/), [`streamlit-webrtc`](https://github.com/whitphx/streamlit-webrtc), [`av`](https://github.com/PyAV-Org/PyAV) | App framework, browser webcam streaming, video frame I/O |
+| Computer vision | [`opencv-python-headless`](https://github.com/opencv/opencv-python), [`mediapipe`](https://developers.google.com/mediapipe), [`numpy`](https://numpy.org/) | Frame drawing, hand-landmark detection, feature vectors |
+| Tabular data | [`pandas`](https://pandas.pydata.org/) | Rendering the per-letter detection log as a table |
 | ML classifier | [`scikit-learn`](https://scikit-learn.org/) | `RandomForestClassifier` training and inference |
-| Spell-checking | [`pyspellchecker`](https://github.com/barrust/pyspellchecker) | Per-word correction of the raw fingerspelled text |
-| Translation | [`deep-translator`](https://github.com/nidhaloff/deep-translator) | Free English to Bengali translation |
-| Text-to-speech | [`gTTS`](https://github.com/pndurang/gTTS) | Free MP3 speech synthesis |
+| Language | [`pyspellchecker`](https://github.com/barrust/pyspellchecker), [`deep-translator`](https://github.com/nidhaloff/deep-translator) | Spelling correction, English-to-Bengali translation |
+| Speech | [`gTTS`](https://github.com/pndurang/gTTS) | Free MP3 speech synthesis |
+| Training only | [`matplotlib`](https://matplotlib.org/) | Imported by `process/create_dataset.py`; not pinned as a dependency |
 
 ---
 
 ## Troubleshooting
 
-- **Camera does not start / black video panel.** Confirm your browser has camera permission for the Streamlit site, and that no other application is holding the webcam. `streamlit-webrtc` requires HTTPS or `localhost` for camera access in most browsers.
-- **Connection fails when deployed remotely** (for example, behind a NAT/firewall or on a hosted environment). The app only configures a public STUN server by default. Add a TURN server to `RTC_CONFIGURATION` in `app.py` for reliable connectivity in restrictive network environments.
-- **`InconsistentVersionWarning` on startup.** `core/model/model.p` was pickled with an older `scikit-learn` release than the one installed. This is a warning, not a fatal error, but consider re-saving the model with your current `scikit-learn` version if you plan to maintain it long-term.
-- **"No letters detected yet" when clicking Generate.** Make sure the camera stream is running (`Start` clicked) and that at least one letter has been held steady long enough (`STABLE_FRAMES`) to be committed before generating output.
-- **Bengali translation shows "Translation unavailable".** `deep-translator`'s `GoogleTranslator` wrapper needs internet access; check your connection or firewall rules for outbound HTTPS.
-- **No audio plays.** Some browsers block autoplay with sound until the user has interacted with the page; the visible `st.audio` player underneath the hidden autoplay tag can always be used to play the caption manually.
-- **First run is slow to start.** If `hand_landmarker.task` is not already present, `core/sign_detector.py` downloads it from Google's model storage on first use — this only happens once.
-- **Training/inference mismatch.** Ensure the feature structure and label mapping stay identical between the `process/` pipeline scripts and the runtime `core/` modules.
+- **Camera doesn't start / black video panel.** Confirm browser camera permission; `streamlit-webrtc` requires HTTPS or `localhost`.
+- **Connection fails when deployed remotely.** The app only configures a public STUN server by default; add a TURN server to `RTC_CONFIGURATION` in `app.py`.
+- **"No letters to work with yet."** Click **⟳ Load** first, or type letters directly into the Edit Buffer.
+- **No audio plays.** Browsers often block autoplay with sound; use the custom player's play button.
 
 ---
 
-## Known limitations and future improvements
+## Known limitations
 
-- **Fingerspelling only, English alphabet.** The model recognizes the 26 static English letters — there is no support for full ASL/BdSL word signs, numbers, or dynamic gestures.
-- **No pre-recorded video upload.** The app is camera-only; there is no path for processing an uploaded video file.
-- **Basic spell-checking only.** Correction is a simple per-word dictionary lookup (`pyspellchecker`) with no grammar- or context-aware correction, so word-order or grammatical errors in the fingerspelled sentence are not fixed.
-- **Single continuous buffer.** There is no explicit "sentence" concept beyond space-separated words; long sessions accumulate into one buffer until cleared.
-- **Dataset storage.** The raw training dataset is versioned directly under `process/data/`; consider an external storage or Git LFS strategy as the dataset grows.
-- **No automated tests.** Beyond `process/test_setup.py`, the repository currently has no formal automated test suite.
+- Fingerspelled English alphabet only — no full ASL/BdSL word signs, numbers, or dynamic gestures.
+- Camera-only input; no path for processing an uploaded video file.
+- Spell correction is a simple per-word dictionary lookup, with no grammar- or context-aware correction.
+- The `process/` training pipeline writes its outputs locally and requires a manual copy step into `core/model/` and `core/data/`.
 
 ---
 
