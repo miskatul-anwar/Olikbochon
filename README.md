@@ -89,23 +89,7 @@ No React, no Vue, no bundler, no separate API server. The browser only exists to
 
 ## Project Structure
 
-```
-Olikbochon/
-├── app.py                  # Streamlit entry point — layout, UI, session state
-├── core/                   # Detection and inference logic
-│   ├── sign_detector.py    # MediaPipe + RandomForest inference (kept unchanged)
-│   └── video_processor.py  # WebRTC VideoProcessorBase, debounce/buffer logic
-├── process/                # Post-detection pipeline
-│   ├── nlp_pipeline.py     # Word boundaries, spell-check, translation
-│   └── tts_utils.py        # gTTS synthesis + base64 autoplay helper
-├── assets/
-│   └── logo.png
-├── model.p                 # Trained RandomForestClassifier
-├── hand_landmarker.task    # MediaPipe hand landmark model
-├── pyproject.toml
-├── requirements.txt
-└── uv.lock
-```
+![](./images/260709_01h07m30s_screenshot.png)
 
 ---
 

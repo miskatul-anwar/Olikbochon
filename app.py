@@ -55,18 +55,6 @@ with st.sidebar:
         horizontal=True,
     )
 
-    st.markdown("---")
-    st.markdown(
-        "**How to use:**\n"
-        "1. Click **Start** below the camera to begin.\n"
-        "2. Fingerspell letters — hold each letter steady for a beat.\n"
-        "3. Pause / drop your hand briefly between words.\n"
-        "4. Click **Generate Speech & Caption** when done.\n"
-    )
-    st.markdown("---")
-    st.caption("Free and open-source: MediaPipe, scikit-learn, "
-               "pyspellchecker, deep-translator, gTTS")
-
 # ----------------------------------------------------------------------------
 # Camera-first video stream
 # ----------------------------------------------------------------------------
