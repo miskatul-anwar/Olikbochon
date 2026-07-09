@@ -10,7 +10,6 @@
   <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-app-FF4B4B?logo=streamlit&logoColor=white">
   <img alt="MediaPipe" src="https://img.shields.io/badge/MediaPipe-HandLandmarker-00897B">
   <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-RandomForest-F7931E?logo=scikitlearn&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/license-unspecified-lightgrey">
 </p>
 
 ---
@@ -63,7 +62,7 @@ gTTS → audio → custom player (play/pause, mute, seek) in-browser
 ## Preview
 
 <p align="center">
-  <img src="./images/260709_01h07m30s_screenshot.png" alt="Olikbochon application screenshot" width="700">
+  <img src="./images/app_ss.png" alt="Olikbochon application screenshot" width="700">
 </p>
 
 ---
@@ -92,9 +91,7 @@ gTTS → audio → custom player (play/pause, mute, seek) in-browser
 Olikbochon/
 ├── app.py
 ├── assets/
-│   └── logo.png
 ├── images/
-│   └── 260709_01h07m30s_screenshot.png
 ├── core/
 │   ├── __init__.py
 │   ├── data/
@@ -115,6 +112,8 @@ Olikbochon/
 │   ├── train_classifier.py
 │   └── data/
 │       └── 0 ... 25/            # 26 class-wise folders of training images
+├── Dockerfile
+├── .dockerignore
 ├── pyproject.toml
 ├── requirements.txt
 ├── uv.lock
@@ -208,6 +207,19 @@ Streamlit prints a local URL (typically `http://localhost:8501`). Open it, grant
 
 ---
 
+## Running with Docker
+
+The project ships a `Dockerfile` (Python 3.11-slim, dependencies synced via `uv`) that installs the system libraries OpenCV, MediaPipe, and PyAV need at runtime — including the GL/EGL libraries MediaPipe's `HandLandmarker` dlopen()s even in headless mode.
+
+```bash
+docker build -t olikbochon .
+docker run -p 8501:8501 olikbochon
+```
+
+The image exposes port `8501` and includes a `HEALTHCHECK` against Streamlit's `/_stcore/health` endpoint. `.dockerignore` keeps the build context lean by excluding `process/`, `core/data/`, `images/`, and `README.md` — only the runtime code and `core/model/` (the trained classifier and hand-landmark asset) are copied into the image.
+
+---
+
 ## Usage guide
 
 1. **Start the camera.** Click **Start** below the video panel.
@@ -245,6 +257,7 @@ No API keys are required — translation and speech synthesis both use free, una
 | Language | [`pyspellchecker`](https://github.com/barrust/pyspellchecker), [`deep-translator`](https://github.com/nidhaloff/deep-translator) | Spelling correction, English-to-Bengali translation |
 | Speech | [`gTTS`](https://github.com/pndurang/gTTS) | Free MP3 speech synthesis |
 | Training only | [`matplotlib`](https://matplotlib.org/) | Imported by `process/create_dataset.py`; not pinned as a dependency |
+| Deployment | [`Docker`](https://www.docker.com/) | Containerized runtime via the included `Dockerfile`, dependencies synced with `uv` |
 
 ---
 
@@ -268,4 +281,4 @@ No API keys are required — translation and speech synthesis both use free, una
 
 ## License
 
-A `LICENSE` file is not currently present in this repository, so no explicit open-source license terms are defined. If you intend to distribute or reuse this project, add a `LICENSE` file (for example, MIT or Apache-2.0) to clarify usage rights.
+A `LICENSE` file is not currently present in this repository, so no explicit open-source license terms are defined.
