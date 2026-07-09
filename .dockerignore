@@ -1,0 +1,28 @@
+# --- Explicitly excluded per project request ---------------------------
+core/data/
+process/
+images/
+README.md
+build/
+dist/
+wheels/
+
+# --- Python bytecode / caches -------------------------------------------
+*.py[oc]
+*.egg-info
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# --- VCS / editor / OS cruft ---------------------------------------------
+.git/
+.gitignore
+.DS_Store
+.vscode/
+.idea/
+
+# --- Local virtualenvs (uv creates .venv/ during `uv sync`; the image
+#     builds its own inside the container, so the host copy is unneeded
+#     and would bloat the build context) -----------------------------
+.venv/
