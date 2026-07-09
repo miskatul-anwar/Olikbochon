@@ -76,15 +76,20 @@ class SignDetector:
     def predict_frame(self, frame):
         """
         frame: BGR ndarray (already flipped/mirrored by caller if desired).
-        Returns (frame_with_overlay, predicted_character or None).
+        Returns (frame_with_overlay, predicted_character_or_None, confidence_or_None).
 
         This is the same per-frame body as the `while True:` loop in
-        inference_classifier.py, just extracted into a function.
+        inference_classifier.py, just extracted into a function. The only
+        addition beyond the original logic is reading the model's
+        predict_proba() (when available) to report a confidence score
+        alongside the predicted letter — the prediction itself is
+        unchanged.
         """
         data_aux = []
         x_ = []
         y_ = []
         predicted_character = None
+        confidence = None
 
         H, W, _ = frame.shape
 
@@ -136,8 +141,15 @@ class SignDetector:
 
             predicted_character = LABELS_DICT[int(prediction[0])]
 
+            if hasattr(self.model, "predict_proba"):
+                try:
+                    proba = self.model.predict_proba([feat])[0]
+                    confidence = float(np.max(proba))
+                except Exception:
+                    confidence = None
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0), 4)
             cv2.putText(frame, predicted_character, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 0), 3,
                         cv2.LINE_AA)
 
-        return frame, predicted_character
+        return frame, predicted_character, confidence

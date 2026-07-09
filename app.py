@@ -9,12 +9,19 @@ Run with:
     streamlit run app.py
 """
 
+import pandas as pd
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+import streamlit.components.v1 as components
+from streamlit_webrtc import (
+    webrtc_streamer,
+    WebRtcMode,
+    RTCConfiguration,
+    VideoHTMLAttributes,
+)
 
 from core.video_processor import SignLanguageProcessor
 from core.nlp_pipeline import run_pipeline
-from core.tts_utils import synthesize_speech, autoplay_audio_html
+from core.tts_utils import synthesize_speech, custom_audio_player_html
 from core.style import CUSTOM_CSS
 
 # ----------------------------------------------------------------------------
@@ -24,7 +31,6 @@ st.set_page_config(
     page_title="অলীকবচন | Olikbochon",
     page_icon="assets/logo.png",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -40,32 +46,15 @@ if "raw_text" not in st.session_state:
     st.session_state.raw_text = ""
 if "audio_bytes" not in st.session_state:
     st.session_state.audio_bytes = None
+if "detection_log" not in st.session_state:
+    st.session_state.detection_log = []
 
 # ----------------------------------------------------------------------------
-# Sidebar — branding + controls
+# Logo — top of the page, small and centered
 # ----------------------------------------------------------------------------
-with st.sidebar:
+logo_col_left, logo_col_center, logo_col_right = st.columns([1, 1, 1])
+with logo_col_center:
     st.image("assets/logo.png", use_container_width=True)
-    st.markdown("### Controls")
-
-    bengali_toggle = st.toggle("Translate to Bengali", value=True)
-    speech_lang = st.radio(
-        "Speak output in:",
-        options=["English", "Bengali"] if bengali_toggle else ["English"],
-        horizontal=True,
-    )
-
-    st.markdown("---")
-    st.markdown(
-        "**How to use:**\n"
-        "1. Click **Start** below the camera to begin.\n"
-        "2. Fingerspell letters — hold each letter steady for a beat.\n"
-        "3. Pause / drop your hand briefly between words.\n"
-        "4. Click **Generate Speech & Caption** when done.\n"
-    )
-    st.markdown("---")
-    st.caption("Free and open-source: MediaPipe, scikit-learn, "
-               "pyspellchecker, deep-translator, gTTS")
 
 # ----------------------------------------------------------------------------
 # Camera-first video stream
@@ -74,16 +63,121 @@ RTC_CONFIGURATION = RTCConfiguration(
     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
 
-ctx = webrtc_streamer(
-    key="olikbochon-sign-stream",
-    mode=WebRtcMode.SENDRECV,
-    rtc_configuration=RTC_CONFIGURATION,
-    video_processor_factory=SignLanguageProcessor,
-    media_stream_constraints={"video": True, "audio": False},
-    async_processing=True,
-)
+# NOTE on the Start/Stop + "Select Device" control that appears directly
+# under the video: streamlit-webrtc renders the live video *and* its
+# Start/Stop/device-select controls together as a single component — the
+# public API doesn't expose a way to split them into separate widgets, so
+# that control can't be relocated into the button row below without
+# patching the third-party package itself. It stays in its native spot
+# here, immediately under the video.
+#
+# NOTE on sizing: streamlit-webrtc renders the video inside its own
+# component <iframe>, which starts at a small default height and only
+# grows to fit whatever is inside it. Sizing the video with `vh` (percent
+# of *viewport* height) doesn't work here because inside that iframe, `vh`
+# is relative to the iframe's own (still-tiny) height, not your browser
+# window. Fixed pixel dimensions sidestep that problem and reliably
+# render at a large, consistent, landscape size matching the design.
+#
+# The box below uses `aspect-ratio: 16/9` + `height: auto` (instead of a
+# hardcoded pixel height) together with a matching 16:9 `ideal` camera
+# request. That way the rendered box always matches the actual stream's
+# proportions exactly, so `object-fit: contain` never has to letterbox
+# (empty bars) or crop the frame — whatever width the column gives it,
+# the height follows automatically at the correct ratio.
+cam_col_left, cam_col_center, cam_col_right = st.columns([1, 10, 1])
 
-st.write("")
+with cam_col_center:
+    ctx = webrtc_streamer(
+        key="olikbochon-sign-stream",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=RTC_CONFIGURATION,
+        video_processor_factory=SignLanguageProcessor,
+        media_stream_constraints={
+            "video": {
+                "width": {"ideal": 1280},
+                "height": {"ideal": 720},
+                "aspectRatio": {"ideal": 1.7777777778},
+            },
+            "audio": False,
+        },
+        async_processing=True,
+        video_html_attrs=VideoHTMLAttributes(
+            autoPlay=True,
+            controls=False,
+            style={
+                "width": "100%",
+                "aspect-ratio": "16 / 9",
+                "height": "auto",
+                "display": "block",
+                "object-fit": "contain",
+            },
+        ),
+    )
+
+# ----------------------------------------------------------------------------
+# Controls — inline in the main UI (no sidebar)
+# ----------------------------------------------------------------------------
+st.markdown("### Controls")
+
+ctrl_col1, ctrl_col2, ctrl_col_spacer, ctrl_col3 = st.columns([1, 1, 0.6, 1.2])
+
+with ctrl_col1:
+    bengali_toggle = st.toggle("Translate to Bengali", value=True)
+
+with ctrl_col2:
+    autocorrect_toggle = st.toggle("Auto-correct spelling", value=True)
+
+with ctrl_col3:
+    speech_lang = st.radio(
+        "Speak output in:",
+        options=["English", "Bengali"] if bengali_toggle else ["English"],
+        horizontal=True,
+    )
+
+# ----------------------------------------------------------------------------
+# Editable buffer — lets the user add or remove any letter, at any
+# position, before generating the caption/speech. This text field IS the
+# buffer that gets fed into the pipeline: click anywhere in it and type,
+# backspace, or paste like any normal text box (Space marks a word break,
+# same as when the camera detects a pause in signing).
+#
+# `_sync_edit_buffer` is applied here, *before* the `st.text_input(key=
+# "edit_buffer", ...)` widget below is instantiated, because Streamlit
+# forbids writing to `st.session_state[key]` once a widget with that key
+# has already been created during the current run.
+# ----------------------------------------------------------------------------
+if "edit_buffer" not in st.session_state:
+    st.session_state.edit_buffer = ""
+if "_sync_edit_buffer" not in st.session_state:
+    st.session_state._sync_edit_buffer = False
+
+if st.session_state._sync_edit_buffer:
+    if ctx.video_processor:
+        st.session_state.edit_buffer = "".join(ctx.video_processor.get_buffer_copy())
+    st.session_state._sync_edit_buffer = False
+
+st.markdown("### Edit Buffer")
+
+edit_col1, edit_col2 = st.columns([4, 1])
+
+with edit_col1:
+    st.text_input(
+        "Detected letters (editable)",
+        key="edit_buffer",
+        label_visibility="collapsed",
+        placeholder="You Can fill this in, or type/paste letters directly...",
+    )
+
+with edit_col2:
+    sync_clicked = st.button("⟳ Load ", use_container_width=True)
+
+if sync_clicked:
+    if ctx.video_processor:
+        st.session_state._sync_edit_buffer = True
+        st.rerun()
+    else:
+        st.warning("Start the camera stream first.")
 
 # ----------------------------------------------------------------------------
 # Action buttons
@@ -91,65 +185,98 @@ st.write("")
 btn_col1, btn_col2, _ = st.columns([1, 1, 2])
 
 with btn_col1:
-    generate_clicked = st.button("Generate Speech & Caption", use_container_width=True)
+    generate_clicked = st.button("Generate", use_container_width=True)
 
 with btn_col2:
     clear_clicked = st.button("Clear Buffer", use_container_width=True)
 
-if clear_clicked and ctx.video_processor:
-    ctx.video_processor.clear_buffer()
+if clear_clicked:
+    if ctx.video_processor:
+        ctx.video_processor.clear_buffer()
     st.session_state.english_text = ""
     st.session_state.bengali_text = ""
     st.session_state.raw_text = ""
     st.session_state.audio_bytes = None
+    st.session_state.detection_log = []
+    st.session_state.edit_buffer = ""
     st.rerun()
 
 if generate_clicked:
-    if not ctx.video_processor:
-        st.warning("Start the camera stream first, then sign a few letters before generating speech.")
+    # The editable buffer is the primary source of truth (it's what the
+    # user sees and can freely add/remove letters from). If it's still
+    # empty — e.g. they haven't clicked "Load from Camera" yet — fall
+    # back to whatever the camera has detected live, same as before.
+    source_text = st.session_state.edit_buffer
+    if not source_text.strip() and ctx.video_processor:
+        source_text = "".join(ctx.video_processor.get_buffer_copy())
+
+    if not source_text.strip():
+        st.warning(
+            "No letters to work with yet. Sign something and click "
+            "**⟳ Load from Camera**, or type letters directly into the "
+            "editable buffer above."
+        )
     else:
-        raw_buffer = ctx.video_processor.get_buffer_copy()
-        if not raw_buffer:
-            st.warning("No letters detected yet. Sign something first.")
-        else:
-            with st.spinner("Processing sign language into text..."):
-                result = run_pipeline(raw_buffer, translate=bengali_toggle)
+        st.session_state.detection_log = (
+            ctx.video_processor.get_detection_log_copy() if ctx.video_processor else []
+        )
 
-            st.session_state.raw_text = result["raw"]
-            st.session_state.english_text = result["english"]
-            st.session_state.bengali_text = result["bengali"] or ""
+        edited_buffer = list(source_text)
 
-            # TTS
-            tts_lang = "bn" if speech_lang == "Bengali" and st.session_state.bengali_text else "en"
-            tts_text = (
-                st.session_state.bengali_text
-                if tts_lang == "bn"
-                else st.session_state.english_text
+        with st.spinner("Processing sign language into text..."):
+            result = run_pipeline(
+                edited_buffer,
+                translate=bengali_toggle,
+                autocorrect=autocorrect_toggle,
             )
-            with st.spinner("Synthesizing speech..."):
-                st.session_state.audio_bytes = synthesize_speech(tts_text, lang=tts_lang)
+
+        st.session_state.raw_text = result["raw"]
+        st.session_state.english_text = result["english"]
+        st.session_state.bengali_text = result["bengali"] or ""
+
+        # TTS
+        tts_lang = "bn" if speech_lang == "Bengali" and st.session_state.bengali_text else "en"
+        tts_text = (
+            st.session_state.bengali_text
+            if tts_lang == "bn"
+            else st.session_state.english_text
+        )
+        with st.spinner("Synthesizing speech..."):
+            st.session_state.audio_bytes = synthesize_speech(tts_text, lang=tts_lang)
 
 # ----------------------------------------------------------------------------
-# Output: final caption + audio
+# Output: Detected Caption card (english + bengali + raw table + speech)
 # ----------------------------------------------------------------------------
 if st.session_state.english_text:
-    # st.markdown('<div class="caption-box">', unsafe_allow_html=True)
-    st.markdown('<div class="caption-label">Detected caption</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="caption-text-en">{st.session_state.english_text}</div>',
-                unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<div class="caption-label">Detected Caption</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="caption-text-en">{st.session_state.english_text}</div>',
+                    unsafe_allow_html=True)
 
-    if st.session_state.bengali_text:
-        st.markdown(f'<div class="caption-text-bn">{st.session_state.bengali_text}</div>',
-                     unsafe_allow_html=True)
+        if st.session_state.bengali_text:
+            st.markdown(f'<div class="caption-text-bn">{st.session_state.bengali_text}</div>',
+                         unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        with st.expander("Show raw detected letters"):
+            if st.session_state.detection_log:
+                df = pd.DataFrame(st.session_state.detection_log)
+                df = df.rename(columns={
+                    "letter": "Sign",
+                    "timestamp": "Timestamp",
+                    "confidence": "Confidence",
+                })
+                df["Confidence"] = df["Confidence"].apply(
+                    lambda c: f"{c:.2f}" if isinstance(c, (int, float)) else "—"
+                )
+                st.dataframe(df, hide_index=True, use_container_width=True)
+            else:
+                st.code(st.session_state.raw_text or "", language=None)
 
-    if st.session_state.audio_bytes:
-        st.write("")
-        st.audio(st.session_state.audio_bytes, format="audio/mp3")
-        st.markdown(autoplay_audio_html(st.session_state.audio_bytes), unsafe_allow_html=True)
-
-    with st.expander("Show raw detected letters"):
-        st.code(st.session_state.raw_text or "", language=None)
+        if st.session_state.audio_bytes:
+            st.markdown("**Speech Output**")
+            components.html(
+                custom_audio_player_html(st.session_state.audio_bytes),
+                height=70,
+            )
 else:
     st.info("Your generated caption will appear here after you click **Generate Speech & Caption**.")
