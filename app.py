@@ -258,10 +258,10 @@ if sync_clicked:
 # ----------------------------------------------------------------------------
 # Action buttons
 # ----------------------------------------------------------------------------
-btn_col1, btn_col2, _ = st.columns([1, 1, 2])
+_,btn_col1, btn_col2, _ = st.columns([1,2, 2, 1])
 
 with btn_col1:
-    generate_clicked = st.button("Generate Speech & Caption", use_container_width=True)
+    generate_clicked = st.button("Generate", use_container_width=True)
 
 with btn_col2:
     clear_clicked = st.button("Clear Buffer", use_container_width=True)
