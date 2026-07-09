@@ -98,8 +98,6 @@ Olikbochon/
 ├── images/
 ├── core/
 │   ├── __init__.py
-│   ├── data/
-│   │   └── data.pickle
 │   ├── model/
 │   │   ├── hand_landmarker.task
 │   │   └── model.p
@@ -115,6 +113,7 @@ Olikbochon/
 │   ├── test_setup.py
 │   ├── train_classifier.py
 │   └── data/
+│       ├── data.pickle
 │       └── 0 ... 25/            # 26 class-wise folders of training images
 ├── Dockerfile
 ├── .dockerignore
@@ -133,8 +132,9 @@ Olikbochon/
 | `core/nlp_pipeline.py` | Text cleanup, optional spell correction, optional Bengali translation |
 | `core/tts_utils.py` | gTTS audio generation, plus a hidden autoplay helper and a styled custom audio player |
 | `core/style.py` | Custom Streamlit CSS / theme |
-| `core/model/` `core/data/` | Trained classifier, MediaPipe model asset, and serialized training features |
+| `core/model/` | Trained classifier and MediaPipe model asset |
 | `process/*.py` | Dataset collection, dataset build, and classifier training — see below |
+| `process/data/` | Class-wise training images plus the serialized `data.pickle` training features |
 
 > All `process/` scripts use paths relative to `process/` itself (for example `./data`, `./model.p`). Run them with `process/` as the working directory.
 
@@ -161,12 +161,12 @@ The `process/` directory offline-regenerates the bundled classifier. Run its scr
 ```bash
 cd process
 python collect_imgs.py       # 26 classes x 100 images -> process/data/<class_id>/
-python create_dataset.py     # landmark extraction (legacy mediapipe.solutions.hands) -> process/data.pickle
+python create_dataset.py     # landmark extraction (legacy mediapipe.solutions.hands) -> process/data/data.pickle
 python train_classifier.py   # RandomForestClassifier, 80/20 split -> process/model.p, prints test accuracy
 
-# promote the new artifacts into the runtime app's expected paths
+# promote the trained classifier into the runtime app's expected path
+# (the dataset itself, process/data/data.pickle, stays in process/ and is not copied into core/)
 cp model.p ../core/model/model.p
-cp data.pickle ../core/data/data.pickle
 ```
 
 Use `python inference_classifier.py` for a standalone, OpenCV-window sanity check, or `python test_setup.py` to confirm `opencv-python`, `mediapipe`, and `scikit-learn` import correctly.
@@ -221,7 +221,7 @@ docker build -t olikbochon .
 docker run -p 8501:8501 olikbochon
 ```
 
-The image exposes port `8501` and includes a `HEALTHCHECK` against Streamlit's `/_stcore/health` endpoint. `.dockerignore` keeps the build context lean by excluding `process/`, `core/data/`, `images/`, and `README.md` — only the runtime code and `core/model/` (the trained classifier and hand-landmark asset) are copied into the image.
+The image exposes port `8501` and includes a `HEALTHCHECK` against Streamlit's `/_stcore/health` endpoint. `.dockerignore` keeps the build context lean by excluding `process/` (which now also holds the dataset), `images/`, and `README.md` — only the runtime code and `core/model/` (the trained classifier and hand-landmark asset) are copied into the image.
 
 ---
 
@@ -295,7 +295,7 @@ No API keys are required — translation and speech synthesis both use free, una
 - Fingerspelled English alphabet only — no full ASL/BdSL word signs, numbers, or dynamic gestures.
 - Camera-only input; no path for processing an uploaded video file.
 - Spell correction is a simple per-word dictionary lookup, with no grammar- or context-aware correction.
-- The `process/` training pipeline writes its outputs locally and requires a manual copy step into `core/model/` and `core/data/`.
+- The `process/` training pipeline writes its outputs locally and requires a manual copy step for the trained classifier into `core/model/`; the dataset (`process/data/data.pickle`) stays in `process/` and is not used by the runtime app.
 
 ---
 
