@@ -237,7 +237,7 @@ with edit_col1:
         "Detected letters (editable)",
         key="edit_buffer",
         label_visibility="collapsed",
-        placeholder="Sign to fill this in, or type/paste letters directly...",
+        placeholder="Reload to edit the current buffer or add...",
     )
 
 with edit_col2:
