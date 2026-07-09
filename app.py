@@ -59,9 +59,80 @@ with logo_col_center:
 # ----------------------------------------------------------------------------
 # Camera-first video stream
 # ----------------------------------------------------------------------------
-RTC_CONFIGURATION = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-)
+import base64
+import json
+import os
+import urllib.request
+
+
+def _get_secret(key):
+    """Reads from Streamlit secrets first (st.secrets), then env vars —
+    works whether you're on Community Cloud (secrets.toml via the
+    dashboard) or Fly.io/Docker (env vars / `fly secrets set`)."""
+    try:
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+    return os.environ.get(key)
+
+
+@st.cache_data(ttl=3000)  # Twilio tokens are valid ~24h; refresh well before that
+def _fetch_twilio_ice_servers(account_sid, auth_token):
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Tokens.json"
+    credentials = base64.b64encode(f"{account_sid}:{auth_token}".encode()).decode()
+    req = urllib.request.Request(
+        url, method="POST", headers={"Authorization": f"Basic {credentials}"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())["ice_servers"]
+
+
+def get_ice_servers():
+    """
+    A STUN-only config isn't enough here: Streamlit Community Cloud (and
+    plenty of office/campus networks) blocks direct peer-to-peer WebRTC
+    traffic, which is what causes the "Connection is taking longer than
+    expected" error — a TURN relay is required to work around that.
+
+    Priority:
+      1. Twilio's Network Traversal Service, if TWILIO_ACCOUNT_SID /
+         TWILIO_AUTH_TOKEN are set as Streamlit secrets or env vars —
+         the option streamlit-webrtc's own docs recommend as most stable.
+      2. The Open Relay Project's free public TURN server as a no-signup
+         fallback — works immediately with zero setup, though (being
+         free/shared) it's not guaranteed 100% uptime.
+    """
+    account_sid = _get_secret("TWILIO_ACCOUNT_SID")
+    auth_token = _get_secret("TWILIO_AUTH_TOKEN")
+
+    if account_sid and auth_token:
+        try:
+            return _fetch_twilio_ice_servers(account_sid, auth_token)
+        except Exception:
+            pass  # fall through to the free relay below
+
+    return [
+        {"urls": ["stun:stun.l.google.com:19302"]},
+        {
+            "urls": ["turn:openrelay.metered.ca:80"],
+            "username": "openrelayproject",
+            "credential": "openrelayproject",
+        },
+        {
+            "urls": ["turn:openrelay.metered.ca:443"],
+            "username": "openrelayproject",
+            "credential": "openrelayproject",
+        },
+        {
+            "urls": ["turn:openrelay.metered.ca:443?transport=tcp"],
+            "username": "openrelayproject",
+            "credential": "openrelayproject",
+        },
+    ]
+
+
+RTC_CONFIGURATION = RTCConfiguration({"iceServers": get_ice_servers()})
 
 # NOTE on the Start/Stop + "Select Device" control that appears directly
 # under the video: streamlit-webrtc renders the live video *and* its
@@ -95,9 +166,10 @@ with cam_col_center:
         video_processor_factory=SignLanguageProcessor,
         media_stream_constraints={
             "video": {
-                "width": {"ideal": 1280},
-                "height": {"ideal": 720},
-                "aspectRatio": {"ideal": 1.7777777778},
+                # "width": {"ideal": 1280},
+                # "height": {"ideal": 720},
+                # "aspectRatio": {"ideal": 1.7777777778},
+                "aspectRatio": "16/9",
             },
             "audio": False,
         },
@@ -112,13 +184,12 @@ with cam_col_center:
                 "display": "block",
                 "object-fit": "contain",
             },
-        ),
+        )
     )
 
 # ----------------------------------------------------------------------------
 # Controls — inline in the main UI (no sidebar)
 # ----------------------------------------------------------------------------
-st.markdown("### Controls")
 
 ctrl_col1, ctrl_col2, ctrl_col_spacer, ctrl_col3 = st.columns([1, 1, 0.6, 1.2])
 
@@ -157,7 +228,7 @@ if st.session_state._sync_edit_buffer:
         st.session_state.edit_buffer = "".join(ctx.video_processor.get_buffer_copy())
     st.session_state._sync_edit_buffer = False
 
-st.markdown("### Edit Buffer")
+# st.markdown("### Edit Buffer")
 
 edit_col1, edit_col2 = st.columns([4, 1])
 
@@ -166,11 +237,11 @@ with edit_col1:
         "Detected letters (editable)",
         key="edit_buffer",
         label_visibility="collapsed",
-        placeholder="You Can fill this in, or type/paste letters directly...",
+        placeholder="Reload to edit the current buffer or add...",
     )
 
 with edit_col2:
-    sync_clicked = st.button("⟳ Load ", use_container_width=True)
+    sync_clicked = st.button("⟳ Reload", use_container_width=True)
 
 if sync_clicked:
     if ctx.video_processor:
@@ -182,13 +253,13 @@ if sync_clicked:
 # ----------------------------------------------------------------------------
 # Action buttons
 # ----------------------------------------------------------------------------
-btn_col1, btn_col2, _ = st.columns([1, 1, 2])
+_,btn_col1, btn_col2, _ = st.columns([1,2, 2, 1])
 
 with btn_col1:
-    generate_clicked = st.button("Generate", use_container_width=True)
+    generate_clicked = st.button("▶️ Generate", use_container_width=True)
 
 with btn_col2:
-    clear_clicked = st.button("Clear Buffer", use_container_width=True)
+    clear_clicked = st.button("🗑️ Clear Buffer", use_container_width=True)
 
 if clear_clicked:
     if ctx.video_processor:
