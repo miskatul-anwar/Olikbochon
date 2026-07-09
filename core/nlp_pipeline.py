@@ -28,13 +28,16 @@ def letters_to_raw_text(letter_buffer):
     return raw.lower()
 
 
-def spell_correct(raw_text):
+def spell_correct(raw_text, autocorrect=True):
     """
-    Word-boundary + spelling correction step.
-    Splits raw_text on whitespace, spell-checks each token individually,
-    and rejoins into a clean sentence. Unknown short tokens (<=1 char)
-    are passed through untouched (likely a single confirmed letter,
-    e.g. 'I' or 'A').
+    Word-boundary + (optional) spelling correction step.
+    Splits raw_text on whitespace, and rejoins into a clean sentence.
+    Unknown short tokens (<=1 char) are passed through untouched (likely
+    a single confirmed letter, e.g. 'I' or 'A').
+
+    If `autocorrect` is False, the spell-checker is skipped entirely and
+    each token is passed through as-is (word-boundary cleanup and final
+    capitalization still happen).
     """
     if not raw_text:
         return ""
@@ -50,8 +53,11 @@ def spell_correct(raw_text):
             corrected_words.append(w.upper() if w.lower() in ("a", "i") else w)
             continue
 
-        correction = _spell.correction(w)
-        corrected_words.append(correction if correction else w)
+        if autocorrect:
+            correction = _spell.correction(w)
+            corrected_words.append(correction if correction else w)
+        else:
+            corrected_words.append(w)
 
     corrected_text = " ".join(corrected_words)
     # Capitalize first letter of the sentence for a cleaner caption
@@ -74,13 +80,15 @@ def translate_to_bengali(english_text):
         return f"[Translation unavailable: {e}]"
 
 
-def run_pipeline(letter_buffer, translate=False):
+def run_pipeline(letter_buffer, translate=False, autocorrect=True):
     """
     Full pipeline entry point used by the Streamlit app.
     Returns a dict with raw, english (corrected), and optionally bengali text.
+    `autocorrect=False` skips the spell-checking step (raw fingerspelled
+    words are only cleaned up for word boundaries/capitalization).
     """
     raw = letters_to_raw_text(letter_buffer)
-    english = spell_correct(raw)
+    english = spell_correct(raw, autocorrect=autocorrect)
     result = {"raw": raw, "english": english, "bengali": None}
     if translate and english:
         result["bengali"] = translate_to_bengali(english)

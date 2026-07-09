@@ -26,15 +26,23 @@ CUSTOM_CSS = """
         color: #f5f7fa;
     }
 
-    section[data-testid="stSidebar"] {
-        background: #0b1120;
-        border-right: 1px solid rgba(255,255,255,0.06);
-    }
-
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 2rem;
-        max-width: 1200px;
+        max-width: 760px;
+    }
+
+    /* ---- Detected Caption card (st.container(border=True)) ---- */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 16px !important;
+    }
+
+    /* ---- Raw-detections table ---- */
+    div[data-testid="stDataFrame"] {
+        border-radius: 10px;
+        overflow: hidden;
     }
 
     /* ---- Camera container ---- */
@@ -80,9 +88,13 @@ CUSTOM_CSS = """
     .stButton > button {
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
-        padding: 0.6rem 1.4rem;
         font-weight: 600;
         width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        white-space: normal;
         background: #1b2436;
         color: #f5f7fa;
         transition: background 0.15s ease, border-color 0.15s ease;

@@ -136,113 +136,55 @@ with ctrl_col3:
     )
 
 # ----------------------------------------------------------------------------
-# Editable buffer — lets the user add or remove any letter, at any
-# position, before generating the caption/speech. This text field IS the
-# buffer that gets fed into the pipeline: click anywhere in it and type,
-# backspace, or paste like any normal text box (Space marks a word break,
-# same as when the camera detects a pause in signing).
-#
-# `_sync_edit_buffer` is applied here, *before* the `st.text_input(key=
-# "edit_buffer", ...)` widget below is instantiated, because Streamlit
-# forbids writing to `st.session_state[key]` once a widget with that key
-# has already been created during the current run.
-# ----------------------------------------------------------------------------
-if "edit_buffer" not in st.session_state:
-    st.session_state.edit_buffer = ""
-if "_sync_edit_buffer" not in st.session_state:
-    st.session_state._sync_edit_buffer = False
-
-if st.session_state._sync_edit_buffer:
-    if ctx.video_processor:
-        st.session_state.edit_buffer = "".join(ctx.video_processor.get_buffer_copy())
-    st.session_state._sync_edit_buffer = False
-
-st.markdown("### Edit Buffer")
-
-edit_col1, edit_col2 = st.columns([4, 1])
-
-with edit_col1:
-    st.text_input(
-        "Detected letters (editable)",
-        key="edit_buffer",
-        label_visibility="collapsed",
-        placeholder="You Can fill this in, or type/paste letters directly...",
-    )
-
-with edit_col2:
-    sync_clicked = st.button("⟳ Load ", use_container_width=True)
-
-if sync_clicked:
-    if ctx.video_processor:
-        st.session_state._sync_edit_buffer = True
-        st.rerun()
-    else:
-        st.warning("Start the camera stream first.")
-
-# ----------------------------------------------------------------------------
 # Action buttons
 # ----------------------------------------------------------------------------
 btn_col1, btn_col2, _ = st.columns([1, 1, 2])
 
 with btn_col1:
-    generate_clicked = st.button("Generate", use_container_width=True)
+    generate_clicked = st.button("Generate Speech & Caption", use_container_width=True)
 
 with btn_col2:
     clear_clicked = st.button("Clear Buffer", use_container_width=True)
 
-if clear_clicked:
-    if ctx.video_processor:
-        ctx.video_processor.clear_buffer()
+if clear_clicked and ctx.video_processor:
+    ctx.video_processor.clear_buffer()
     st.session_state.english_text = ""
     st.session_state.bengali_text = ""
     st.session_state.raw_text = ""
     st.session_state.audio_bytes = None
     st.session_state.detection_log = []
-    st.session_state.edit_buffer = ""
     st.rerun()
 
 if generate_clicked:
-    # The editable buffer is the primary source of truth (it's what the
-    # user sees and can freely add/remove letters from). If it's still
-    # empty — e.g. they haven't clicked "Load from Camera" yet — fall
-    # back to whatever the camera has detected live, same as before.
-    source_text = st.session_state.edit_buffer
-    if not source_text.strip() and ctx.video_processor:
-        source_text = "".join(ctx.video_processor.get_buffer_copy())
-
-    if not source_text.strip():
-        st.warning(
-            "No letters to work with yet. Sign something and click "
-            "**⟳ Load from Camera**, or type letters directly into the "
-            "editable buffer above."
-        )
+    if not ctx.video_processor:
+        st.warning("Start the camera stream first, then sign a few letters before generating speech.")
     else:
-        st.session_state.detection_log = (
-            ctx.video_processor.get_detection_log_copy() if ctx.video_processor else []
-        )
+        raw_buffer = ctx.video_processor.get_buffer_copy()
+        if not raw_buffer:
+            st.warning("No letters detected yet. Sign something first.")
+        else:
+            st.session_state.detection_log = ctx.video_processor.get_detection_log_copy()
 
-        edited_buffer = list(source_text)
+            with st.spinner("Processing sign language into text..."):
+                result = run_pipeline(
+                    raw_buffer,
+                    translate=bengali_toggle,
+                    autocorrect=autocorrect_toggle,
+                )
 
-        with st.spinner("Processing sign language into text..."):
-            result = run_pipeline(
-                edited_buffer,
-                translate=bengali_toggle,
-                autocorrect=autocorrect_toggle,
+            st.session_state.raw_text = result["raw"]
+            st.session_state.english_text = result["english"]
+            st.session_state.bengali_text = result["bengali"] or ""
+
+            # TTS
+            tts_lang = "bn" if speech_lang == "Bengali" and st.session_state.bengali_text else "en"
+            tts_text = (
+                st.session_state.bengali_text
+                if tts_lang == "bn"
+                else st.session_state.english_text
             )
-
-        st.session_state.raw_text = result["raw"]
-        st.session_state.english_text = result["english"]
-        st.session_state.bengali_text = result["bengali"] or ""
-
-        # TTS
-        tts_lang = "bn" if speech_lang == "Bengali" and st.session_state.bengali_text else "en"
-        tts_text = (
-            st.session_state.bengali_text
-            if tts_lang == "bn"
-            else st.session_state.english_text
-        )
-        with st.spinner("Synthesizing speech..."):
-            st.session_state.audio_bytes = synthesize_speech(tts_text, lang=tts_lang)
+            with st.spinner("Synthesizing speech..."):
+                st.session_state.audio_bytes = synthesize_speech(tts_text, lang=tts_lang)
 
 # ----------------------------------------------------------------------------
 # Output: Detected Caption card (english + bengali + raw table + speech)

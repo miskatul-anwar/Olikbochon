@@ -34,6 +34,7 @@ class SignLanguageProcessor(VideoProcessorBase):
 
         self.lock = threading.Lock()
         self.letter_buffer = []       # committed letters + space tokens
+        self.detection_log = []       # [{"letter", "timestamp", "confidence"}, ...]
         self.current_display_letter = ""  # for live caption bar (not yet committed)
 
         self._current_letter = None
@@ -45,7 +46,7 @@ class SignLanguageProcessor(VideoProcessorBase):
         img = frame.to_ndarray(format="bgr24")
         img = cv2.flip(img, 1)  # mirror, matches inference_classifier.py behavior
 
-        img, predicted_character = self.detector.predict_frame(img)
+        img, predicted_character, confidence = self.detector.predict_frame(img)
 
         with self.lock:
             if predicted_character is not None:
@@ -62,6 +63,11 @@ class SignLanguageProcessor(VideoProcessorBase):
                 if (self._stable_count == STABLE_FRAMES
                         and predicted_character != self._last_committed):
                     self.letter_buffer.append(predicted_character)
+                    self.detection_log.append({
+                        "letter": predicted_character,
+                        "timestamp": time.strftime("%H:%M:%S"),
+                        "confidence": confidence,
+                    })
                     self._last_committed = predicted_character
             else:
                 self._no_hand_count += 1
@@ -101,9 +107,14 @@ class SignLanguageProcessor(VideoProcessorBase):
         with self.lock:
             return list(self.letter_buffer)
 
+    def get_detection_log_copy(self):
+        with self.lock:
+            return list(self.detection_log)
+
     def clear_buffer(self):
         with self.lock:
             self.letter_buffer = []
+            self.detection_log = []
             self._current_letter = None
             self._stable_count = 0
             self._no_hand_count = 0
