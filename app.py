@@ -246,7 +246,7 @@ with edit_col1:
     )
 
 with edit_col2:
-    sync_clicked = st.button("⟳ Load from Camera", use_container_width=True)
+    sync_clicked = st.button("⟳ Reload", use_container_width=True)
 
 if sync_clicked:
     if ctx.video_processor:
